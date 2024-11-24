@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gráfico de Candlestick - RTD</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+            background-color: #f4f4f9;
+        }
+        canvas {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border: 1px solid #ddd;
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            background-color: #4caf50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>Gráfico Candlestick - Dados RTD</h1>
+    <input type="file" id="fileInput" accept=".xlsx" />
+    <button id="startButton">Iniciar Gráfico</button>
+    <canvas id="candlestickChart"></canvas>
+    <h2 id="probability"></h2>
+    <script>
+        let candlestickData = [];
+        let prices = [];
+        let probabilities = { high: 0, low: 0 };
+        let intervalId;
+
+        // Configuração inicial do gráfico
+        const ctx = document.getElementById('candlestickChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'candlestick',
+            data: {
+                datasets: [{
+                    label: 'Candlestick',
+                    data: candlestickData,
+                    borderColor: '#4caf50',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: { type: 'time', time: { unit: 'minute' }, title: { display: true, text: 'Hora' } },
+                    y: { title: { display: true, text: 'Preço' } }
+                }
+            }
+        });
+
+        // Lê o arquivo Excel e processa os dados
+        document.getElementById('fileInput').addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const data = await file.arrayBuffer();
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(sheet);
+
+            // Inicia o gráfico com os dados
+            initializeGraph(jsonData);
+        });
+
+        // Função para iniciar o gráfico
+        function initializeGraph(data) {
+            clearInterval(intervalId); // Garante que nenhum intervalo anterior está rodando
+
+            prices = [];
+            candlestickData = [];
+            probabilities = { high: 0, low: 0 };
+
+            intervalId = setInterval(() => {
+                updatePrices(data);
+                if (prices.length === 7) {
+                    createCandle();
+                }
+            }, 60 * 1000); // Atualiza a cada minuto
+        }
+
+        // Atualiza a lista de preços em tempo real
+        function updatePrices(data) {
+            const currentTime = new Date();
+            const currentRow = data.find(row => row.Hora === currentTime.toLocaleTimeString());
+
+            if (currentRow) {
+                const price = parseFloat(currentRow["Último"]);
+                prices.push(price);
+            }
+        }
+
+        // Cria um novo candle a cada 7 minutos
+        function createCandle() {
+            if (prices.length === 0) return;
+
+            const open = prices[0];
+            const close = prices[prices.length - 1];
+            const high = Math.max(...prices);
+            const low = Math.min(...prices);
+
+            candlestickData.push({
+                x: new Date(),
+                o: open,
+                h: high,
+                l: low,
+                c: close
+            });
+
+            chart.update();
+            prices = [];
+            updateProbabilities();
+        }
+
+        // Atualiza as probabilidades de alta/baixa
+        function updateProbabilities() {
+            if (candlestickData.length < 2) return;
+
+            let upCount = 0;
+            let downCount = 0;
+
+            for (let i = 1; i < candlestickData.length; i++) {
+                const prevClose = candlestickData[i - 1].c;
+                const currentClose = candlestickData[i].c;
+
+                if (currentClose > prevClose) upCount++;
+                if (currentClose < prevClose) downCount++;
+            }
+
+            const total = upCount + downCount;
+            probabilities.high = ((upCount / total) * 100).toFixed(2);
+            probabilities.low = ((downCount / total) * 100).toFixed(2);
+
+            document.getElementById('probability').innerText = `
+                Probabilidade de Alta: ${probabilities.high}%
+                | Probabilidade de Baixa: ${probabilities.low}%
+            `;
+        }
+
+        // Botão de inicializar o gráfico
+        document.getElementById('startButton').addEventListener('click', () => {
+            if (!candlestickData.length) {
+                alert('Por favor, selecione o arquivo Excel com os dados antes de iniciar!');
+            }
+        });
+    </script>
+</body>
+</html>
